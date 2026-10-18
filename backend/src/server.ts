@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -20,6 +20,9 @@ addFormats(ajv);
 const validateBlueprint = ajv.compile(blueprintSchema);
 
 const MAX_BODY_BYTES = 1_000_000;
+const INTERNAL_ERROR_MESSAGE = "Se produjo un error interno";
+
+class InvalidInputError extends Error {}
 
 type GenerateInput = GenerateBlueprintInput;
 
@@ -42,21 +45,43 @@ type BlueprintServices = {
   ) => Promise<void>;
 };
 
-async function preserveRevisedBlueprintCandidate(
-  blueprint: Record<string, unknown>
-): Promise<void> {
-  const candidatePath = resolve(
-    process.cwd(),
-    "../handoff/e2e/LAST_SCHEMA_VALID_REVISE_CANDIDATE.json"
-  );
-  await writeFile(candidatePath, `${JSON.stringify(blueprint, null, 2)}\n`, "utf8");
+export function revisionDiagnosticsEnabled(
+  value: string | undefined = process.env.REVISE_DIAGNOSTICS_ENABLED
+): boolean {
+  return value?.trim().toLowerCase() === "true";
+}
+
+export function createRevisedBlueprintCandidatePreserver(
+  directory = resolve(process.cwd(), ".diagnostics", "revise")
+): (blueprint: Record<string, unknown>) => Promise<void> {
+  return async (blueprint) => {
+    await mkdir(directory, { recursive: true });
+    const candidatePath = resolve(directory, "LAST_SCHEMA_VALID_REVISE_CANDIDATE.json");
+    await writeFile(candidatePath, `${JSON.stringify(blueprint, null, 2)}\n`, "utf8");
+  };
 }
 
 const defaultBlueprintServices: BlueprintServices = {
   generateBlueprint: generateBlueprintWithNebius,
   reviseBlueprint: reviseBlueprintWithNebius,
-  preserveRevisedBlueprintCandidate
+  ...(revisionDiagnosticsEnabled()
+    ? { preserveRevisedBlueprintCandidate: createRevisedBlueprintCandidatePreserver() }
+    : {})
 };
+
+async function preserveCandidateBestEffort(
+  preserve: BlueprintServices["preserveRevisedBlueprintCandidate"],
+  blueprint: Record<string, unknown>
+): Promise<void> {
+  if (!preserve) {
+    return;
+  }
+  try {
+    await preserve(blueprint);
+  } catch {
+    console.info("Revision diagnostic candidate was not saved");
+  }
+}
 
 function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
   response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
@@ -71,16 +96,20 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
     if (size > MAX_BODY_BYTES) {
-      throw new Error("REQUEST_BODY_TOO_LARGE");
+      throw new InvalidInputError("REQUEST_BODY_TOO_LARGE");
     }
     chunks.push(buffer);
   }
 
   if (chunks.length === 0) {
-    throw new Error("EMPTY_BODY");
+    throw new InvalidInputError("EMPTY_BODY");
   }
 
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new InvalidInputError("INVALID_JSON");
+  }
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -418,9 +447,17 @@ export function createApiServer(services: BlueprintServices = defaultBlueprintSe
           });
           return;
         }
-        sendJson(response, 400, {
-          error: "INVALID_INPUT",
-          message: "El cuerpo debe contener JSON válido"
+        if (error instanceof InvalidInputError) {
+          sendJson(response, 400, {
+            error: "INVALID_INPUT",
+            message: "El cuerpo debe contener JSON válido"
+          });
+          return;
+        }
+        console.error("Unexpected backend error");
+        sendJson(response, 500, {
+          error: "INTERNAL_ERROR",
+          message: INTERNAL_ERROR_MESSAGE
         });
       }
       return;
@@ -466,9 +503,6 @@ export function createApiServer(services: BlueprintServices = defaultBlueprintSe
         }
 
         const blueprint = revisedBlueprint as Record<string, unknown>;
-        if (services.preserveRevisedBlueprintCandidate) {
-          await services.preserveRevisedBlueprintCandidate(blueprint);
-        }
         const changes = collectBlueprintChanges(input.blueprint, blueprint);
         const postconditionError = validateRevisionPostconditions(
           input.blueprint,
@@ -477,6 +511,10 @@ export function createApiServer(services: BlueprintServices = defaultBlueprintSe
           changes
         );
         if (postconditionError) {
+          await preserveCandidateBestEffort(
+            services.preserveRevisedBlueprintCandidate,
+            blueprint
+          );
           sendJson(response, 502, {
             error: "INVALID_MODEL_OUTPUT",
             message: postconditionError
@@ -496,9 +534,17 @@ export function createApiServer(services: BlueprintServices = defaultBlueprintSe
           });
           return;
         }
-        sendJson(response, 400, {
-          error: "INVALID_INPUT",
-          message: "El cuerpo debe contener JSON válido"
+        if (error instanceof InvalidInputError) {
+          sendJson(response, 400, {
+            error: "INVALID_INPUT",
+            message: "El cuerpo debe contener JSON válido"
+          });
+          return;
+        }
+        console.error("Unexpected backend error");
+        sendJson(response, 500, {
+          error: "INTERNAL_ERROR",
+          message: INTERNAL_ERROR_MESSAGE
         });
       }
       return;

@@ -36,7 +36,8 @@ Backend stateless (Node.js, :3000)
 
 No existe base de datos, autenticación, memoria, RAG, Tavily ni arquitectura
 multi-agent. El frontend conserva temporalmente el Blueprint en memoria y lo reenvía
-completo cuando el usuario solicita una revisión.
+completo cuando el usuario solicita una revisión. El backend no persiste Blueprints
+por defecto.
 
 ## FRONTEND SETUP
 
@@ -82,7 +83,14 @@ Configurar en `backend/.env`:
 NEBIUS_API_KEY=
 NEBIUS_BASE_URL=
 NEBIUS_MODEL=
+REVISE_DIAGNOSTICS_ENABLED=
 ```
+
+`REVISE_DIAGNOSTICS_ENABLED` es opcional y está desactivada por defecto. Solo el
+valor explícito `true` conserva localmente, en `.diagnostics/revise/`, el último
+candidato válido de schema que haya sido rechazado por las postcondiciones de
+`/revise`. Este diagnóstico best-effort no forma parte del estado funcional y un
+fallo de escritura nunca cambia la respuesta de la API.
 
 Comandos disponibles, ejecutados desde `backend/`:
 
@@ -339,20 +347,90 @@ Ejemplo mínimo de respuesta:
       "deliverables": ["Vídeo horizontal de 30 segundos"]
     },
     "constraints": {},
-    "character_requirements": [],
+    "character_requirements": [
+      {
+        "character_id": "character_01",
+        "name": "Barista",
+        "description": "Protagonista que prepara el café"
+      }
+    ],
     "world_requirements": {
-      "locations": []
+      "locations": [
+        {
+          "location_id": "location_01",
+          "name": "Cafetería",
+          "description": "Interior de una cafetería artesanal"
+        }
+      ]
     },
-    "scenes": [],
+    "scenes": [
+      {
+        "scene_id": "scene_01",
+        "title": "Preparación al amanecer",
+        "description": "La barista prepara el café al amanecer",
+        "location_id": "location_01",
+        "character_ids": ["character_01"],
+        "time_of_day": "amanecer",
+        "shots": [
+          {
+            "shot_id": "shot_01",
+            "description": "Preparación del café",
+            "shot_size": "Plano medio",
+            "camera_directions": {
+              "framing": "Barista centrada",
+              "movement": "Cámara fija"
+            },
+            "character_ids": ["character_01"]
+          }
+        ]
+      }
+    ],
     "dependencies": [],
-    "conflicts": [],
-    "approval_gates": [],
+    "conflicts": [
+      {
+        "conflict_id": "conflict_01",
+        "description": "La localización no está disponible de noche",
+        "severity": "high",
+        "affected_elements": [
+          {
+            "element_type": "scene",
+            "element_id": "scene_01"
+          }
+        ],
+        "decision_required": false,
+        "approval_gate_id": "approval_01",
+        "resolution_notes": "La escena se realizará al amanecer"
+      }
+    ],
+    "approval_gates": [
+      {
+        "approval_gate_id": "approval_01",
+        "description": "Decidir el horario de rodaje",
+        "conflict_ids": ["conflict_01"],
+        "proposed_decision": "Cambiar la escena al amanecer",
+        "status": "approved",
+        "human_decision": {
+          "action": "approve",
+          "notes": "Priorizar la disponibilidad de la localización"
+        }
+      }
+    ],
     "next_steps": []
   },
   "changes": [
     {
       "element_type": "scene",
       "element_id": "scene_01",
+      "change_type": "modified"
+    },
+    {
+      "element_type": "conflict",
+      "element_id": "conflict_01",
+      "change_type": "modified"
+    },
+    {
+      "element_type": "approval_gate",
+      "element_id": "approval_01",
       "change_type": "modified"
     }
   ]
@@ -386,9 +464,9 @@ Los errores usan esta forma:
 - `MODEL_ERROR` (`502`): configuración incompleta, error de red o respuesta no
   satisfactoria de Nebius.
 - `MODEL_TIMEOUT` (`504`): la inferencia superó el límite de tiempo.
+- `INTERNAL_ERROR` (`500`): fallo interno inesperado; la respuesta no expone
+  detalles de implementación.
 - `NOT_FOUND` (`404`): ruta o combinación de método y ruta no implementada.
-
-`INTERNAL_ERROR` no existe en backend v0.1.
 
 ## FRONTEND INTEGRATION NOTES
 
@@ -399,10 +477,12 @@ Los errores usan esta forma:
 - El frontend debe conservar temporalmente en su propio estado el Blueprint recibido
   y reenviarlo completo a `/api/blueprint/revise` junto con la decisión humana.
 - No existe base de datos ni autenticación.
-- El backend es stateless: no conserva Blueprints entre peticiones.
+- El backend es stateless por defecto: no conserva Blueprints entre peticiones.
+  El diagnóstico opcional descrito en Backend Setup no forma parte del estado
+  funcional del producto.
 - Los estados de loading y error del frontend deben mapear los códigos
-  `INVALID_INPUT`, `INVALID_MODEL_OUTPUT`, `SCHEMA_VALIDATION_ERROR`, `MODEL_ERROR`
-  y `MODEL_TIMEOUT`.
+  `INVALID_INPUT`, `INVALID_MODEL_OUTPUT`, `SCHEMA_VALIDATION_ERROR`, `MODEL_ERROR`,
+  `MODEL_TIMEOUT` e `INTERNAL_ERROR`.
 - Backend v0.1 no añade cabeceras CORS. Durante el desarrollo, si frontend y backend
   usan orígenes distintos, el frontend debe utilizar un proxy local hacia esta API.
 

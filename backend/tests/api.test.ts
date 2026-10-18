@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
 import formatsPlugin from "ajv-formats";
 
-import { createApiServer } from "../src/server.js";
+import {
+  createApiServer,
+  createRevisedBlueprintCandidatePreserver,
+  revisionDiagnosticsEnabled
+} from "../src/server.js";
 import blueprintSchema from "../src/schemas/blueprint.schema.json" with { type: "json" };
 
 const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
@@ -432,6 +439,108 @@ test("revise preserves a schema-valid candidate before postcondition rejection",
     });
     assert.equal(response.status, 502);
     assert.deepEqual(preserved, revisedBlueprint);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("revise succeeds without a diagnostic directory when persistence is disabled", async () => {
+  assert.equal(revisionDiagnosticsEnabled(undefined), false);
+  assert.equal(revisionDiagnosticsEnabled(""), false);
+  const result = await requestMockedRevision(createResolvedBlueprint());
+  assert.equal(result.status, 200);
+});
+
+test("enabled diagnostic persistence safely creates its directory", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "workflow-finder-diagnostics-"));
+  context.after(async () => {
+    if (root.startsWith(tmpdir())) {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+  const directory = join(root, "missing", "revise");
+  const blueprint = createResolvedBlueprint();
+  const preserve = createRevisedBlueprintCandidatePreserver(directory);
+
+  await preserve(blueprint);
+
+  const saved = JSON.parse(
+    await readFile(join(directory, "LAST_SCHEMA_VALID_REVISE_CANDIDATE.json"), "utf8")
+  );
+  assert.deepEqual(saved, blueprint);
+});
+
+test("diagnostic write failure does not alter the controlled rejection", async () => {
+  const originalBlueprint = createValidBlueprint();
+  const revisedBlueprint = createResolvedBlueprint();
+  revisedBlueprint.approval_gates[0].status = "pending";
+  const server = createApiServer({
+    generateBlueprint: async () => {
+      throw new Error("Generation service must not be called");
+    },
+    reviseBlueprint: async () => structuredClone(revisedBlueprint),
+    preserveRevisedBlueprintCandidate: async () => {
+      throw new Error("private filesystem path");
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/blueprint/revise`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ blueprint: originalBlueprint, decision: revisionDecision })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 502);
+    assert.deepEqual(body, {
+      error: "INVALID_MODEL_OUTPUT",
+      message: "El approval gate relacionado no está aprobado"
+    });
+    assert.doesNotMatch(JSON.stringify(body), /filesystem|path/i);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
+test("unexpected internal errors return a sanitized HTTP 500", async () => {
+  const server = createApiServer({
+    generateBlueprint: async () => {
+      throw new Error("SECRET stack at private filesystem path");
+    },
+    reviseBlueprint: async () => {
+      throw new Error("Revision service must not be called");
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address === "object");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/blueprint/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        brief: "Test brief",
+        duration: null,
+        deadline: null,
+        available_tools: [],
+        expected_deliverable: null
+      })
+    });
+    const body = await response.json();
+    assert.equal(response.status, 500);
+    assert.deepEqual(body, {
+      error: "INTERNAL_ERROR",
+      message: "Se produjo un error interno"
+    });
+    assert.doesNotMatch(JSON.stringify(body), /SECRET|stack|filesystem|path/i);
   } finally {
     server.close();
     await once(server, "close");

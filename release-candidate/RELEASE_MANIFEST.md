@@ -53,7 +53,7 @@ The public repository contains:
 ## Known limitations
 
 - The `finish_reason` from the last frontend-driven generate request was not retained, although the request returned HTTP 200 and a Blueprint valid against the frozen schema.
-- The application is stateless: it has no database, user authentication, or persistent project storage.
+- The application is stateless by default: it has no database, user authentication, or persistent project storage. Optional best-effort revise diagnostics are disabled unless explicitly enabled and are not functional product state.
 - Real generation and revision require network access and valid Nebius environment variables.
 - Model-generated content can vary; conflicts appear only when detected in the generated Blueprint.
 
