@@ -33,6 +33,10 @@ footer{min-height:285px;margin-top:35px;padding-top:175px;color:#292750;backgrou
 footer>span{position:relative;z-index:1;text-shadow:0 1px 7px #fff;padding:10px 0}footer:after{content:"";position:absolute;bottom:75px;left:6%;right:6%;height:1px;background:linear-gradient(90deg,#8cbff799,#d67eeccc,#8cbff799);box-shadow:0 0 14px #e185ff88}
 @media(max-width:700px){footer{min-height:250px;padding-top:140px}.snow-ground svg{height:200px}footer:after{bottom:82px}.brief{box-shadow:-3px 0 20px #00baff30,3px 0 20px #f13eff26}.actions button{box-shadow:-3px 0 12px #00dbff70,3px 0 14px #fd32df65}.intro>p:last-child{font-size:17px}}
 
+/* Subtle luminosity lift for the procedural snow and network canvases. */
+.atmosphere{filter:brightness(1.12) contrast(1.04) drop-shadow(0 0 5px #dff7ff4d)}
+.nodal-universe{filter:brightness(1.1) contrast(1.04) drop-shadow(0 0 6px #9c8cff45)}
+
 /* Footer separator owns a layout row, 22px clear of the copy. */
 footer{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1px auto;align-content:end;column-gap:20px;row-gap:0}
 footer:after{position:static;grid-column:1 / -1;grid-row:1;width:auto;margin-inline:0}
