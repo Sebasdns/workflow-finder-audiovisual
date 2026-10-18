@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1",
+  "objective": { "summary": "Test production", "deliverables": ["Test film"] },
+  "constraints": {},
+  "character_requirements": [{ "character_id": "character", "name": "Character", "description": "Test character" }],
+  "world_requirements": { "locations": [{ "location_id": "location", "name": "Location", "description": "Test location" }] },
+  "scenes": [{ "scene_id": "scene", "title": "Scene", "description": "Test scene", "location_id": "location", "character_ids": ["character"], "shots": [{ "shot_id": "shot", "description": "Test shot", "shot_size": "Medium", "camera_directions": { "framing": "Centered", "movement": "Static" }, "character_ids": ["character"] }] }],
+  "dependencies": [],
+  "conflicts": [{ "conflict_id": "conflict", "description": "Test conflict", "severity": "low", "affected_elements": [{ "element_type": "shot", "element_id": "shot" }], "decision_required": true, "approval_gate_id": "gate" }],
+  "approval_gates": [{ "approval_gate_id": "gate", "description": "Test approval", "conflict_ids": ["conflict"], "proposed_decision": "Approve test decision", "status": "pending" }],
+  "next_steps": [{ "step_id": "step", "action": "Test next step", "production_area": "production", "status": "pending" }]
+}

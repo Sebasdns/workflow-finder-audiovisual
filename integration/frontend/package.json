@@ -1,0 +1,17 @@
+{
+  "name": "workflow-finder-audiovisual-frontend",
+  "version": "0.1.0",
+  "license": "MPL-2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "lint": "eslint .",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": { "ajv": "^8.20.0", "ajv-formats": "^3.0.1" },
+  "devDependencies": { "vite": "^7.0.0", "eslint": "^9.0.0", "@eslint/js": "^9.0.0", "globals": "^16.0.0" }
+}
