@@ -20,8 +20,8 @@ const label = value => {
   return status !== `status.${value}` ? status : fallbackLabel(value);
 };
 const empty = message => `<p class="muted empty-state">${escape(message)}</p>`;
-function list(items) { return items?.length ? `<ul>${items.map(item => `<li>${escape(modelText(item))}</li>`).join('')}</ul>` : empty(t('empty.items')); }
-function details(object, excluded = []) { return Object.entries(object).filter(([key]) => !excluded.includes(key) && !key.endsWith('_id') && !key.endsWith('_ids')).map(([key, value]) => `<div class="detail"><span>${escape(label(key))}</span>${Array.isArray(value) ? list(value) : `<p>${escape(modelText(value))}</p>`}</div>`).join(''); }
+function list(items) { return items?.length ? `<ul>${items.map(item => `<li>${escape(modelText(item))}</li>`).join('')}</ul>` : ''; }
+function details(object, excluded = []) { return Object.entries(object).filter(([key, value]) => !excluded.includes(key) && !key.endsWith('_id') && !key.endsWith('_ids') && (!Array.isArray(value) || value.length > 0)).map(([key, value]) => `<div class="detail"><span>${escape(label(key))}</span>${Array.isArray(value) ? list(value) : `<p>${escape(modelText(value))}</p>`}</div>`).join(''); }
 function section(title, content, cls = '', emptyMessage = t('empty.info')) { return `<section class="panel ${cls}"><h2>${escape(title)}</h2>${content || empty(emptyMessage)}</section>`; }
 function index(blueprint) {
   const entries = [...blueprint.character_requirements.map(x => ['character', x.character_id, x]), ...blueprint.world_requirements.locations.map(x => ['location', x.location_id, x]), ...blueprint.scenes.flatMap(x => [['scene', x.scene_id, x], ...x.shots.map(shot => ['shot', shot.shot_id, shot])]), ...blueprint.dependencies.map(x => ['dependency', x.dependency_id, x]), ...blueprint.conflicts.map(x => ['conflict', x.conflict_id, x]), ...blueprint.approval_gates.map(x => ['approval_gate', x.approval_gate_id, x]), ...blueprint.next_steps.map(x => ['next_step', x.step_id, x])];
